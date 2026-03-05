@@ -1,6 +1,6 @@
 import * as React from 'react'
 import { useEffect, useState } from 'react'
-import { MessageSquare, Briefcase, Code2, FolderOpen, Monitor, Server, Pencil } from 'lucide-react'
+import { MessageSquare, Briefcase, Code2, FolderOpen, Monitor, Server, Pencil, ChevronDown, Plus } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@renderer/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@renderer/components/ui/dialog'
@@ -14,6 +14,13 @@ import { useChatActions } from '@renderer/hooks/use-chat-actions'
 import { ipcClient } from '@renderer/lib/ipc/ipc-client'
 import { Input } from '@renderer/components/ui/input'
 import type { ImageAttachment } from '@renderer/components/chat/InputArea'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@renderer/components/ui/dropdown-menu'
 
 const modes: { value: AppMode; labelKey: string; icon: React.ReactNode }[] = [
   { value: 'chat', labelKey: 'mode.chat', icon: <MessageSquare className="size-3.5" /> },
@@ -46,6 +53,8 @@ export function ChatHomePage(): React.JSX.Element {
   const setMode = useUIStore((s) => s.setMode)
   const activeProjectId = useChatStore((s) => s.activeProjectId)
   const projects = useChatStore((s) => s.projects)
+  const setActiveProject = useChatStore((s) => s.setActiveProject)
+  const createProject = useChatStore((s) => s.createProject)
   const ensureDefaultProject = useChatStore((s) => s.ensureDefaultProject)
   const updateProjectDirectory = useChatStore((s) => s.updateProjectDirectory)
   const activeProject =
@@ -160,6 +169,22 @@ export function ChatHomePage(): React.JSX.Element {
     })()
     setSshDirEditingId(null)
     setFolderDialogOpen(false)
+  }
+
+  const handleCreateNewProject = async (): Promise<void> => {
+    const result = (await ipcClient.invoke('fs:select-folder')) as {
+      canceled?: boolean
+      path?: string
+    }
+    if (!result.canceled && result.path) {
+      // Use folder name as project name
+      const folderName = result.path.split(/[\\/]/).pop() || 'New Project'
+      const projectId = await createProject({
+        name: folderName,
+        workingFolder: result.path,
+      })
+      setActiveProject(projectId)
+    }
   }
 
   const handleSend = (text: string, images?: ImageAttachment[]): void => {
@@ -444,6 +469,66 @@ export function ChatHomePage(): React.JSX.Element {
               </div>
             </DialogContent>
           </Dialog>
+        )}
+
+        {/* Project selector (only for cowork/code modes) */}
+        {mode !== 'chat' && (
+          <div className="mb-4 w-full max-w-3xl flex justify-center">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 gap-2 text-xs"
+                >
+                  <FolderOpen className="size-3.5" />
+                  <span className="max-w-[200px] truncate">
+                    {activeProject?.name ?? t('input.selectProject', { defaultValue: 'Select Project' })}
+                  </span>
+                  <ChevronDown className="size-3.5 opacity-50" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="center" className="w-[280px]">
+                {projects.filter((p) => !p.pluginId).map((project) => (
+                  <DropdownMenuItem
+                    key={project.id}
+                    onClick={() => setActiveProject(project.id)}
+                    className="flex items-center gap-2"
+                  >
+                    <FolderOpen className="size-3.5" />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs font-medium truncate">{project.name}</div>
+                      {project.workingFolder && (
+                        <div className="text-[10px] text-muted-foreground truncate">
+                          {project.workingFolder}
+                        </div>
+                      )}
+                    </div>
+                    {activeProject?.id === project.id && (
+                      <div className="size-1.5 rounded-full bg-primary" />
+                    )}
+                  </DropdownMenuItem>
+                ))}
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onClick={() => void handleCreateNewProject()}
+                  className="flex items-center gap-2 text-primary"
+                >
+                  <Plus className="size-3.5" />
+                  <span className="text-xs">{t('input.newProject', { defaultValue: 'New Project' })}</span>
+                </DropdownMenuItem>
+                {activeProject && (
+                  <DropdownMenuItem
+                    onClick={handleOpenFolderDialog}
+                    className="flex items-center gap-2"
+                  >
+                    <Pencil className="size-3.5" />
+                    <span className="text-xs">{t('input.changeFolder', { defaultValue: 'Change Folder' })}</span>
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         )}
 
         {/* Input area */}

@@ -352,7 +352,7 @@ export function RightPanel({ compact = false }: { compact?: boolean }): React.JS
                 t={t}
               />
 
-              <div className="flex-1 overflow-auto bg-background">
+              <div className="flex-1 overflow-auto bg-background p-4">
                 <AnimatePresence mode="wait">
                   {tab === 'steps' && (
                     <FadeIn key="steps" className="h-full">

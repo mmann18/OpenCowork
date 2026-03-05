@@ -141,7 +141,7 @@ export async function generateSessionTitle(userMessage: string): Promise<Session
         }
       : null
 
-  if (!config || !config.apiKey) return null
+  if (!config || (config.requiresApiKey !== false && !config.apiKey)) return null
 
   const messages: UnifiedMessage[] = [
     {
