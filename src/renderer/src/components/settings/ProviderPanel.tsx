@@ -102,13 +102,16 @@ async function fetchModelsFromProvider(
   baseUrl: string,
   apiKey: string,
   builtinId?: string,
-  useSystemProxy?: boolean
+  useSystemProxy?: boolean,
+  userAgent?: string
 ): Promise<AIModelConfig[]> {
   if (builtinId === 'openrouter') {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+    if (userAgent) headers['User-Agent'] = userAgent
     const result = await window.electron.ipcRenderer.invoke('api:request', {
       url: 'https://openrouter.ai/api/frontend/models/find',
       method: 'GET',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       useSystemProxy
     })
     if (result?.error) throw new Error(result.error)
@@ -130,6 +133,7 @@ async function fetchModelsFromProvider(
       'Content-Type': 'application/json'
     }
     if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`
+    if (userAgent) headers['User-Agent'] = userAgent
     const result = await window.electron.ipcRenderer.invoke('api:request', {
       url,
       method: 'GET',
@@ -1016,6 +1020,7 @@ function ProviderConfigPanel({ provider }: { provider: AIProvider }): React.JSX.
         'openai-responses'
       )
       const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      if (activeProvider.userAgent) headers['User-Agent'] = activeProvider.userAgent
       if (activeProvider.oauth?.accessToken) {
         headers['Authorization'] = `Bearer ${activeProvider.oauth.accessToken}`
       }
@@ -1177,7 +1182,8 @@ function ProviderConfigPanel({ provider }: { provider: AIProvider }): React.JSX.
         activeProvider.baseUrl,
         activeProvider.apiKey,
         activeProvider.builtinId,
-        activeProvider.useSystemProxy
+        activeProvider.useSystemProxy,
+        activeProvider.userAgent
       )
       if (models.length === 0) {
         toast.info(t('provider.noModelsFound'))

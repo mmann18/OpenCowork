@@ -21,6 +21,8 @@
     "deleteConversation": "Delete Conversation",
     "deleteConfirm": "Are you sure you want to delete \"{{title}}\"?",
     "deleteConfirmRunning": "This session is currently running. Stop it and delete?",
+    "deleteQueuedMessagesNotice": "This session still has {{count}} queued messages. They will be deleted too.",
+    "deleteRunningNotice": "This session still has active work. The current run will be stopped before deletion.",
     "stopAndDelete": "Stop & Delete",
     "exportAsMarkdown": "Export as Markdown",
     "exportAsJson": "Export as JSON",

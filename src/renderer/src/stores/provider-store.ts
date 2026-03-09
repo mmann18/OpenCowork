@@ -137,18 +137,13 @@ function buildRequestOverrides(
   return ensureTemperatureOmit(merged, modelId)
 }
 
-function supportsPriorityServiceTier(providerBuiltinId?: string, modelId?: string): boolean {
-  if (!providerBuiltinId || !modelId) return false
-  if (providerBuiltinId === 'openai') return true
-  return providerBuiltinId === 'routin-ai' && modelId === 'gpt-5.4'
-}
-
 function resolveServiceTier(
-  providerBuiltinId?: string,
-  modelId?: string
+  model: AIModelConfig | null | undefined,
+  providerBuiltinId?: string
 ): ProviderConfig['serviceTier'] | undefined {
+  if (providerBuiltinId === 'codex-oauth') return model?.serviceTier
   if (!useSettingsStore.getState().fastModeEnabled) return undefined
-  return supportsPriorityServiceTier(providerBuiltinId, modelId) ? 'priority' : undefined
+  return model?.serviceTier
 }
 
 function mergeBuiltinModels(
@@ -520,7 +515,7 @@ export const useProviderStore = create<ProviderStore>()(
           activeModel?.requestOverrides,
           activeModel?.id ?? activeModelId
         )
-        const serviceTier = resolveServiceTier(provider.builtinId, activeModel?.id ?? activeModelId)
+        const serviceTier = resolveServiceTier(activeModel, provider.builtinId)
         return {
           type: requestType,
           apiKey: provider.apiKey,
@@ -616,7 +611,7 @@ export const useProviderStore = create<ProviderStore>()(
           model?.requestOverrides,
           model?.id ?? modelId
         )
-        const serviceTier = resolveServiceTier(provider.builtinId, model?.id ?? modelId)
+        const serviceTier = resolveServiceTier(model, provider.builtinId)
         return {
           type: requestType,
           apiKey: provider.apiKey,
@@ -676,7 +671,7 @@ export const useProviderStore = create<ProviderStore>()(
           fastModel?.requestOverrides,
           fastModel?.id ?? model
         )
-        const serviceTier = resolveServiceTier(provider.builtinId, fastModel?.id ?? model)
+        const serviceTier = resolveServiceTier(fastModel, provider.builtinId)
         return {
           type: requestType,
           apiKey: provider.apiKey,

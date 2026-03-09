@@ -8,6 +8,7 @@ export const qwenCodingPreset: BuiltinProviderPreset = {
   homepage: 'https://dashscope.aliyun.com',
   apiKeyUrl: 'https://dashscope.console.aliyun.com/apiKey',
   defaultEnabled: true,
+  userAgent: 'claude-cli/2.1.71 (external, cli)',
   defaultModels: [
     // Coding Plan models (official: Coding Plan 概述 / 套餐详情)
     { id: 'qwen3.5-plus', name: 'Qwen3.5 Plus', icon: 'qwen', enabled: true, supportsFunctionCall: true },

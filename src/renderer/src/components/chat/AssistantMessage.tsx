@@ -46,6 +46,7 @@ import { MONO_FONT } from '@renderer/lib/constants'
 import type { ToolCallState } from '@renderer/lib/agent/types'
 import { IMAGE_GENERATE_TOOL_NAME } from '@renderer/lib/app-plugin/types'
 import { LazySyntaxHighlighter } from './LazySyntaxHighlighter'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@renderer/components/ui/dialog'
 
 interface AssistantMessageProps {
   content: string | ContentBlock[]
@@ -95,81 +96,67 @@ function DebugToggleButton({ debugInfo }: { debugInfo: RequestDebugInfo }): Reac
   return (
     <>
       <button
-        onClick={() => setShow((v) => !v)}
+        onClick={() => setShow(true)}
         className={`flex items-center rounded px-1 py-0.5 transition-colors ${show ? 'text-orange-500 bg-orange-500/10' : 'text-muted-foreground hover:bg-muted-foreground/10'}`}
       >
         <Bug className="size-3.5" />
       </button>
-      {show && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
-          onClick={() => setShow(false)}
-        >
-          <div
-            className="w-[640px] max-w-[90vw] max-h-[80vh] rounded-lg border bg-background shadow-2xl flex flex-col overflow-hidden"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="px-4 py-2.5 border-b bg-muted/30 flex items-center justify-between shrink-0">
-              <div className="flex items-center gap-2">
-                <Bug className="size-3.5 text-orange-500" />
-                <span className="text-xs font-medium">Request Debug</span>
+      <Dialog open={show} onOpenChange={setShow}>
+        <DialogContent className="max-h-[80vh] max-w-[90vw] gap-0 overflow-hidden p-0 sm:max-w-3xl">
+          <DialogHeader className="border-b bg-muted/30 px-4 py-2.5 pr-10 text-left">
+            <DialogTitle className="flex items-center gap-2 text-xs font-medium">
+              <Bug className="size-3.5 text-orange-500" />
+              <span>Request Debug</span>
+            </DialogTitle>
+          </DialogHeader>
+          <div className="flex-1 overflow-y-auto">
+            <div
+              className="space-y-1.5 border-b px-4 py-2 text-[11px]"
+              style={{ fontFamily: MONO_FONT }}
+            >
+              <div className="flex gap-2">
+                <span className="text-muted-foreground/60 shrink-0">URL</span>
+                <span className="text-foreground break-all">{debugInfo.url}</span>
               </div>
-              <button
-                onClick={() => setShow(false)}
-                className="text-muted-foreground hover:text-foreground text-sm px-1"
-              >
-                ✕
-              </button>
+              <div className="flex gap-2">
+                <span className="text-muted-foreground/60 shrink-0">Method</span>
+                <span className="text-foreground">{debugInfo.method}</span>
+              </div>
+              <div className="flex gap-2">
+                <span className="text-muted-foreground/60 shrink-0">Time</span>
+                <span className="text-foreground">
+                  {new Date(debugInfo.timestamp).toLocaleTimeString()}
+                </span>
+              </div>
             </div>
-            <div className="flex-1 overflow-y-auto">
-              <div
-                className="px-4 py-2 space-y-1.5 border-b text-[11px]"
-                style={{ fontFamily: MONO_FONT }}
-              >
-                <div className="flex gap-2">
-                  <span className="text-muted-foreground/60 shrink-0">URL</span>
-                  <span className="text-foreground break-all">{debugInfo.url}</span>
-                </div>
-                <div className="flex gap-2">
-                  <span className="text-muted-foreground/60 shrink-0">Method</span>
-                  <span className="text-foreground">{debugInfo.method}</span>
-                </div>
-                <div className="flex gap-2">
-                  <span className="text-muted-foreground/60 shrink-0">Time</span>
-                  <span className="text-foreground">
-                    {new Date(debugInfo.timestamp).toLocaleTimeString()}
+            {bodyFormatted && (
+              <div>
+                <div className="flex items-center justify-between border-b bg-muted/20 px-4 py-1.5">
+                  <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                    Request Body
                   </span>
+                  <CopyButton text={bodyFormatted} />
                 </div>
+                <LazySyntaxHighlighter
+                  language="json"
+                  customStyle={{
+                    margin: 0,
+                    padding: '12px 16px',
+                    fontSize: '11px',
+                    fontFamily: MONO_FONT,
+                    background: 'transparent',
+                    wordBreak: 'break-all',
+                    whiteSpace: 'pre-wrap'
+                  }}
+                  codeTagProps={{ style: { fontFamily: MONO_FONT } }}
+                >
+                  {bodyFormatted}
+                </LazySyntaxHighlighter>
               </div>
-              {bodyFormatted && (
-                <div>
-                  <div className="px-4 py-1.5 bg-muted/20 border-b flex items-center justify-between">
-                    <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
-                      Request Body
-                    </span>
-                    <CopyButton text={bodyFormatted} />
-                  </div>
-                  <LazySyntaxHighlighter
-                    language="json"
-                    customStyle={{
-                      margin: 0,
-                      padding: '12px 16px',
-                      fontSize: '11px',
-                      fontFamily: MONO_FONT,
-                      background: 'transparent',
-                      wordBreak: 'break-all',
-                      whiteSpace: 'pre-wrap'
-                    }}
-                    codeTagProps={{ style: { fontFamily: MONO_FONT } }}
-                  >
-                    {bodyFormatted}
-                  </LazySyntaxHighlighter>
-                </div>
-              )}
-            </div>
+            )}
           </div>
-        </div>
-      )}
+        </DialogContent>
+      </Dialog>
     </>
   )
 }

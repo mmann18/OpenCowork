@@ -106,6 +106,7 @@ interface QueuedSessionMessage {
 const pendingSessionMessages = new Map<string, QueuedSessionMessage[]>()
 const pendingSessionMessageViews = new Map<string, PendingSessionMessageItem[]>()
 const pendingSessionMessageListeners = new Set<() => void>()
+const pausedPendingSessionDispatch = new Set<string>()
 
 const QUEUED_MESSAGE_SYSTEM_REMIND = `<system-reminder>
 A new user message was queued while you were still processing the previous request.
@@ -142,10 +143,25 @@ function notifyPendingSessionMessageListeners(): void {
   }
 }
 
+function setPendingSessionDispatchPaused(sessionId: string, paused: boolean): void {
+  const changed = paused
+    ? !pausedPendingSessionDispatch.has(sessionId)
+    : pausedPendingSessionDispatch.has(sessionId)
+  if (!changed) return
+
+  if (paused) {
+    pausedPendingSessionDispatch.add(sessionId)
+  } else {
+    pausedPendingSessionDispatch.delete(sessionId)
+  }
+  notifyPendingSessionMessageListeners()
+}
+
 function replaceSessionPendingMessages(sessionId: string, next: QueuedSessionMessage[]): void {
   if (next.length === 0) {
     pendingSessionMessages.delete(sessionId)
     pendingSessionMessageViews.delete(sessionId)
+    pausedPendingSessionDispatch.delete(sessionId)
   } else {
     pendingSessionMessages.set(sessionId, next)
     pendingSessionMessageViews.set(sessionId, next.map(toPendingItem))
@@ -180,6 +196,24 @@ export function subscribePendingSessionMessages(listener: () => void): () => voi
 
 export function getPendingSessionMessages(sessionId: string): PendingSessionMessageItem[] {
   return pendingSessionMessageViews.get(sessionId) ?? EMPTY_PENDING_SESSION_MESSAGES
+}
+
+export function getPendingSessionMessageCountForSession(sessionId: string): number {
+  return pendingSessionMessages.get(sessionId)?.length ?? 0
+}
+
+export function isPendingSessionDispatchPaused(sessionId: string): boolean {
+  return pausedPendingSessionDispatch.has(sessionId)
+}
+
+export function clearPendingSessionMessages(sessionId: string): number {
+  const cleared = pendingSessionMessages.get(sessionId)?.length ?? 0
+  if (cleared === 0) {
+    setPendingSessionDispatchPaused(sessionId, false)
+    return 0
+  }
+  replaceSessionPendingMessages(sessionId, [])
+  return cleared
 }
 
 export function updatePendingSessionMessageDraft(
@@ -421,11 +455,13 @@ function dispatchNextQueuedMessage(sessionId: string): boolean {
     return false
   }
 
+  if (pausedPendingSessionDispatch.has(sessionId)) return false
   if (hasActiveSessionRun(sessionId)) return false
 
   const next = dequeuePendingSessionMessage(sessionId)
   if (!next) return false
 
+  setPendingSessionDispatchPaused(sessionId, false)
   setTimeout(() => {
     void _sendMessageFn?.(next.text, next.images, next.source ?? 'queued', sessionId)
   }, 0)
@@ -433,6 +469,7 @@ function dispatchNextQueuedMessage(sessionId: string): boolean {
 }
 
 export function dispatchNextQueuedMessageForSession(sessionId: string): boolean {
+  setPendingSessionDispatchPaused(sessionId, false)
   return dispatchNextQueuedMessage(sessionId)
 }
 
@@ -441,6 +478,8 @@ export function dispatchNextQueuedMessageForSession(sessionId: string): boolean 
  * Safe to call even if the session has nothing running.
  */
 export function abortSession(sessionId: string): void {
+  setPendingSessionDispatchPaused(sessionId, true)
+
   // Abort session agent loop
   const ac = sessionAbortControllers.get(sessionId)
   if (ac) {
@@ -812,6 +851,22 @@ export function useChatActions(): {
 
       const hasActiveRun = hasActiveSessionRun(sessionId)
       const statusIsRunning = useAgentStore.getState().runningSessions[sessionId] === 'running'
+      const hasPendingQueue = hasPendingSessionMessages(sessionId)
+      const isQueueDispatchPaused = isPendingSessionDispatchPaused(sessionId)
+
+      if (isQueueDispatchPaused && hasPendingQueue && source !== 'queued') {
+        enqueuePendingSessionMessage(sessionId, { text, images, source })
+        if (source === undefined) {
+          setPendingSessionDispatchPaused(sessionId, false)
+          dispatchNextQueuedMessage(sessionId)
+        }
+        return
+      }
+
+      if (isQueueDispatchPaused && source === undefined && !hasPendingQueue) {
+        setPendingSessionDispatchPaused(sessionId, false)
+      }
+
       const shouldQueue = hasActiveRun || (statusIsRunning && source !== 'queued')
 
       if (shouldQueue) {
@@ -1803,6 +1858,7 @@ export function useChatActions(): {
     // Stop the active session's agent
     const activeId = useChatStore.getState().activeSessionId
     if (activeId) {
+      setPendingSessionDispatchPaused(activeId, true)
       const ac = sessionAbortControllers.get(activeId)
       if (ac) {
         ac.abort()
@@ -2006,15 +2062,29 @@ export function sendImplementPlan(planId: string): void {
   const plan = usePlanStore.getState().plans[planId]
   if (!plan) return
 
+  const chatStore = useChatStore.getState()
+  const uiStore = useUIStore.getState()
+  const session = chatStore.sessions.find((item) => item.id === plan.sessionId)
+  const shouldSwitchToCodeMode =
+    session?.mode === 'clarify' ||
+    (chatStore.activeSessionId === plan.sessionId && uiStore.mode === 'clarify')
+
   // 1. Approve + mark plan as implementing
   usePlanStore.getState().approvePlan(planId)
   usePlanStore.getState().startImplementing(planId)
 
+  if (shouldSwitchToCodeMode) {
+    chatStore.updateSessionMode(plan.sessionId, 'code')
+    if (chatStore.activeSessionId === plan.sessionId) {
+      uiStore.setMode('code')
+    }
+  }
+
   // 2. Exit plan mode
-  useUIStore.getState().exitPlanMode(plan.sessionId)
+  uiStore.exitPlanMode(plan.sessionId)
 
   // 3. Switch to Steps tab
-  useUIStore.getState().setRightPanelTab('steps')
+  uiStore.setRightPanelTab('steps')
 
   _sendMessageFn(`Execute the plan`)
 }

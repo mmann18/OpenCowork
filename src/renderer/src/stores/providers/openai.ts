@@ -349,6 +349,7 @@ export const openaiPreset: BuiltinProviderPreset = {
       name: "GPT 5.4",
       icon: 'openai',
       enabled: true,
+      serviceTier: 'priority',
       contextLength: 1_050_000,
       maxOutputTokens: 128_000,
       supportsVision: true,

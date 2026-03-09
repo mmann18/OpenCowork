@@ -276,6 +276,8 @@ export interface AIModelConfig {
   enableSystemPromptCache?: boolean
   /** Optional request overrides applied only to this model */
   requestOverrides?: RequestOverrides
+  /** OpenAI-compatible service tier (e.g. priority). Effective when fast mode is enabled. */
+  serviceTier?: 'priority'
 }
 
 export interface RequestOverrides {

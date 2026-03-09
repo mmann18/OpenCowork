@@ -65,10 +65,8 @@ interface ProviderGroup {
   models: AIModelConfig[]
 }
 
-function supportsPriorityServiceTier(providerBuiltinId?: string, modelId?: string): boolean {
-  if (!providerBuiltinId || !modelId) return false
-  if (providerBuiltinId === 'openai') return true
-  return providerBuiltinId === 'routin-ai' && modelId === 'gpt-5.4'
+function supportsPriorityServiceTier(model: AIModelConfig | undefined): boolean {
+  return !!model?.serviceTier
 }
 
 function selectModel(
@@ -109,7 +107,7 @@ function ModelSettingsPopover({
   tChat: (key: string, opts?: Record<string, unknown>) => string
 }): React.JSX.Element | null {
   const supportsThinking = model?.supportsThinking ?? false
-  const supportsFastMode = supportsPriorityServiceTier(provider?.builtinId, model?.id)
+  const supportsFastMode = supportsPriorityServiceTier(model)
   const levels = model?.thinkingConfig?.reasoningEffortLevels
   const defaultLevel = model?.thinkingConfig?.defaultReasoningEffort ?? 'medium'
   const thinkingEnabled = useSettingsStore((s) => s.thinkingEnabled)

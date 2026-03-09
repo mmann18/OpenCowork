@@ -12,7 +12,10 @@ import {
   ImagePlus,
   ClipboardList,
   Globe,
-  Wand2
+  Wand2,
+  ChevronDown,
+  ChevronRight,
+  Pencil
 } from 'lucide-react'
 import { Button } from '@renderer/components/ui/button'
 import { Textarea } from '@renderer/components/ui/textarea'
@@ -40,7 +43,10 @@ import { SkillsMenu } from './SkillsMenu'
 import { ModelSwitcher } from './ModelSwitcher'
 import { useMcpStore } from '@renderer/stores/mcp-store'
 import {
+  clearPendingSessionMessages,
+  dispatchNextQueuedMessageForSession,
   getPendingSessionMessages,
+  isPendingSessionDispatchPaused,
   removePendingSessionMessage,
   subscribePendingSessionMessages,
   updatePendingSessionMessageDraft,
@@ -221,6 +227,12 @@ function areQueuedMessagesEqual(
   return true
 }
 
+function summarizeQueuedMessage(text: string): string {
+  const normalized = text.replace(/\s+/g, ' ').trim()
+  if (!normalized) return ''
+  return normalized.length > 72 ? `${normalized.slice(0, 72)}…` : normalized
+}
+
 interface InputAreaProps {
   onSend: (text: string, images?: ImageAttachment[]) => void
   onStop?: () => void
@@ -391,9 +403,18 @@ export function InputArea({
     getQueuedMessagesSnapshot,
     () => EMPTY_QUEUED_MESSAGES
   )
+  const isQueueDispatchPaused = React.useSyncExternalStore(
+    subscribePendingSessionMessages,
+    () => (activeSessionId ? isPendingSessionDispatchPaused(activeSessionId) : false),
+    () => false
+  )
   const [editingQueueItemId, setEditingQueueItemId] = React.useState<string | null>(null)
   const [editingQueueText, setEditingQueueText] = React.useState('')
   const [editingQueueImages, setEditingQueueImages] = React.useState<ImageAttachment[]>([])
+  const queueExpandedBySessionRef = React.useRef<Record<string, boolean>>({})
+  const previousQueueSizeBySessionRef = React.useRef<Record<string, number>>({})
+  const [isQueueExpanded, setIsQueueExpanded] = React.useState(false)
+  const [queueClearConfirmOpen, setQueueClearConfirmOpen] = React.useState(false)
 
   const startEditQueuedMessage = React.useCallback((msg: PendingSessionMessageItem) => {
     setEditingQueueItemId(msg.id)
@@ -457,6 +478,38 @@ export function InputArea({
     },
     [activeSessionId, queuedMessages, editingQueueText, editingQueueImages]
   )
+
+  const toggleQueueExpanded = React.useCallback(() => {
+    setIsQueueExpanded((prev) => {
+      const next = !prev
+      if (activeSessionId) {
+        queueExpandedBySessionRef.current[activeSessionId] = next
+      }
+      return next
+    })
+  }, [activeSessionId])
+
+  const clearQueuedMessagesForActiveSession = React.useCallback(() => {
+    if (!activeSessionId) return
+    const cleared = clearPendingSessionMessages(activeSessionId)
+    if (cleared === 0) return
+    setQueueClearConfirmOpen(false)
+    cancelEditQueuedMessage()
+    toast.success(t('input.queueCleared', { defaultValue: '已清空排队消息' }))
+  }, [activeSessionId, cancelEditQueuedMessage, t])
+
+  const handleClearQueuedMessages = React.useCallback(() => {
+    if (queuedMessages.length <= 1) {
+      clearQueuedMessagesForActiveSession()
+      return
+    }
+    setQueueClearConfirmOpen(true)
+  }, [clearQueuedMessagesForActiveSession, queuedMessages.length])
+
+  const resumeQueuedMessages = React.useCallback(() => {
+    if (!activeSessionId) return
+    dispatchNextQueuedMessageForSession(activeSessionId)
+  }, [activeSessionId])
 
   const getHistoryKey = React.useCallback(
     () => activeSessionId ?? PENDING_HISTORY_KEY,
@@ -594,7 +647,16 @@ export function InputArea({
     setEditingQueueItemId(null)
     setEditingQueueText('')
     setEditingQueueImages([])
-  }, [activeSessionId])
+    setQueueClearConfirmOpen(false)
+    if (!activeSessionId) {
+      setIsQueueExpanded(false)
+      return
+    }
+    setIsQueueExpanded(
+      queueExpandedBySessionRef.current[activeSessionId] ?? queuedMessages.length > 0
+    )
+    previousQueueSizeBySessionRef.current[activeSessionId] = queuedMessages.length
+  }, [activeSessionId, queuedMessages.length])
 
   React.useEffect(() => {
     if (!editingQueueItemId) return
@@ -603,6 +665,26 @@ export function InputArea({
     setEditingQueueText('')
     setEditingQueueImages([])
   }, [queuedMessages, editingQueueItemId])
+
+  React.useEffect(() => {
+    if (!isStreaming) {
+      cancelEditQueuedMessage()
+    }
+  }, [isStreaming, cancelEditQueuedMessage])
+
+  React.useEffect(() => {
+    if (!activeSessionId) return
+    const previousSize = previousQueueSizeBySessionRef.current[activeSessionId] ?? 0
+    if (queuedMessages.length > previousSize) {
+      queueExpandedBySessionRef.current[activeSessionId] = true
+      setIsQueueExpanded(true)
+    } else if (queuedMessages.length === 0) {
+      queueExpandedBySessionRef.current[activeSessionId] = false
+      setIsQueueExpanded(false)
+      setQueueClearConfirmOpen(false)
+    }
+    previousQueueSizeBySessionRef.current[activeSessionId] = queuedMessages.length
+  }, [activeSessionId, queuedMessages.length])
 
   React.useEffect(() => {
     const prevSessionId = prevSessionIdRef.current
@@ -906,7 +988,7 @@ export function InputArea({
       console.log('[Optimizer] Cleanup')
       setIsOptimizing(false)
     }
-  }, [text, isOptimizing])
+  }, [text, isOptimizing, currentLanguage])
 
   const handleSelectOption = React.useCallback((content: string) => {
     setText(content)
@@ -991,140 +1073,230 @@ export function InputArea({
         >
           {/* Top drag handle */}
           <div className="h-1.5 cursor-row-resize rounded-t-lg" onMouseDown={handleDragStart} />
-          {/* Queued message list (while current run is processing) */}
+          {/* Queued message list */}
           {queuedMessages.length > 0 && (
             <div className="px-3 pt-3 pb-1">
-              <div className="mb-2 flex items-center justify-between rounded-md border border-primary/20 bg-primary/5 px-2.5 py-1.5">
-                <span className="text-xs font-medium text-primary">
-                  {t('input.queueTitle', { defaultValue: '排队消息' })} · {queuedMessages.length}
-                </span>
-                <span className="text-[10px] text-muted-foreground">
-                  {t('input.queueHint', { defaultValue: '当前任务结束后按顺序发送' })}
-                </span>
-              </div>
-              <div className="max-h-56 space-y-2 overflow-y-auto pr-1">
-                {queuedMessages.map((msg) => {
-                  const isEditing = editingQueueItemId === msg.id
-                  return (
-                    <div
-                      key={msg.id}
-                      className="rounded-md border border-border/60 bg-muted/30 px-2.5 py-2"
+              <div className="overflow-hidden rounded-xl border border-border/60 bg-muted/20 shadow-sm">
+                <div className="flex items-center justify-between gap-2 px-3 py-2.5">
+                  <button
+                    type="button"
+                    className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                    onClick={toggleQueueExpanded}
+                  >
+                    {isQueueExpanded ? (
+                      <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
+                    ) : (
+                      <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />
+                    )}
+                    <ClipboardList className="size-3.5 shrink-0 text-primary/80" />
+                    <span className="truncate text-xs font-medium text-foreground">
+                      {t('input.queueTitle', { defaultValue: '排队消息' })}
+                    </span>
+                    <span className="rounded-full border border-border/60 bg-background/80 px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                      {queuedMessages.length}
+                    </span>
+                    <span className="truncate text-[10px] text-muted-foreground/80">
+                      {isQueueDispatchPaused
+                        ? t('input.queuePausedHint', {
+                            defaultValue: '已暂停，点击继续发送'
+                          })
+                        : t('input.queueRunningHint', {
+                            defaultValue: '当前任务结束后按顺序发送'
+                          })}
+                    </span>
+                  </button>
+                  <div className="flex shrink-0 items-center gap-1">
+                    {isQueueDispatchPaused && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 gap-1 rounded-lg px-2 text-[10px]"
+                        onClick={resumeQueuedMessages}
+                      >
+                        <Send className="size-3" />
+                        {t('input.queueResume', { defaultValue: '继续发送' })}
+                      </Button>
+                    )}
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 gap-1 rounded-lg px-2 text-[10px] text-muted-foreground hover:text-destructive"
+                      onClick={handleClearQueuedMessages}
                     >
-                      <div className="mb-1 flex items-center justify-end">
-                        <div className="flex items-center gap-1">
-                          {isEditing ? (
-                            <>
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                className="h-6 px-2 text-[10px]"
-                                onClick={() => saveQueuedMessage(msg.id)}
-                              >
-                                {t('action.save', { ns: 'common', defaultValue: '保存' })}
-                              </Button>
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                className="h-6 px-2 text-[10px]"
-                                onClick={cancelEditQueuedMessage}
-                              >
-                                {t('action.cancel', { ns: 'common' })}
-                              </Button>
-                            </>
-                          ) : (
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              className="h-6 px-2 text-[10px]"
-                              onClick={() => startEditQueuedMessage(msg)}
-                            >
-                              {t('action.edit', { ns: 'common', defaultValue: '编辑' })}
-                            </Button>
-                          )}
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            className="h-6 px-2 text-[10px] text-destructive hover:text-destructive"
-                            onClick={() => removeQueuedMessage(msg.id)}
+                      <Trash2 className="size-3" />
+                      {t('action.clear', { ns: 'common' })}
+                    </Button>
+                  </div>
+                </div>
+
+                {isQueueExpanded && (
+                  <div className="border-t border-border/50 px-3 py-2">
+                    <div className="max-h-56 space-y-2 overflow-y-auto pr-1">
+                      {queuedMessages.map((msg) => {
+                        const isEditing = editingQueueItemId === msg.id
+                        const summaryText = summarizeQueuedMessage(msg.text)
+                        return (
+                          <div
+                            key={msg.id}
+                            className="rounded-lg border border-border/60 bg-background/80 px-3 py-2 shadow-sm"
                           >
-                            {t('action.delete', { ns: 'common', defaultValue: '删除' })}
-                          </Button>
-                        </div>
-                      </div>
-                      {isEditing ? (
-                        <div className="space-y-2">
-                          <Textarea
-                            value={editingQueueText}
-                            onChange={(e) => setEditingQueueText(e.target.value)}
-                            className="min-h-[56px] max-h-36 resize-none border-border/70 bg-background text-xs"
-                            rows={2}
-                          />
-                          {editingQueueImages.length > 0 && (
-                            <div className="flex gap-2 overflow-x-auto pb-1">
-                              {editingQueueImages.map((img) => (
-                                <div key={img.id} className="relative group/img shrink-0">
-                                  <img
-                                    src={img.dataUrl}
-                                    alt=""
-                                    className="size-12 rounded-md border border-border/60 object-cover shadow-sm"
-                                  />
-                                  <button
-                                    type="button"
-                                    className="absolute -top-1.5 -right-1.5 flex size-4 items-center justify-center rounded-full bg-destructive text-destructive-foreground shadow-sm opacity-0 transition-opacity group-hover/img:opacity-100"
-                                    onClick={() => removeQueuedImage(img.id)}
-                                  >
-                                    <X className="size-2.5" />
-                                  </button>
+                            {isEditing ? (
+                              <div className="space-y-2">
+                                <div className="flex items-center justify-between gap-2">
+                                  <span className="text-[10px] font-medium text-muted-foreground">
+                                    {t('input.queueEditing', { defaultValue: '编辑排队消息' })}
+                                  </span>
+                                  <div className="flex items-center gap-1">
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="sm"
+                                      className="h-6 px-2 text-[10px]"
+                                      onClick={() => saveQueuedMessage(msg.id)}
+                                    >
+                                      {t('action.save', { ns: 'common' })}
+                                    </Button>
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="sm"
+                                      className="h-6 px-2 text-[10px]"
+                                      onClick={cancelEditQueuedMessage}
+                                    >
+                                      {t('action.cancel', { ns: 'common' })}
+                                    </Button>
+                                  </div>
                                 </div>
-                              ))}
-                            </div>
-                          )}
-                          <div className="flex items-center justify-between gap-2">
-                            {editingQueueImages.length > 0 ? (
-                              <p className="text-[10px] text-muted-foreground">
-                                {t('input.queueImageCount', {
-                                  defaultValue: '{{count}} 张图片',
-                                  count: editingQueueImages.length
-                                })}
-                              </p>
+                                <Textarea
+                                  value={editingQueueText}
+                                  onChange={(e) => setEditingQueueText(e.target.value)}
+                                  className="min-h-[56px] max-h-36 resize-none border-border/70 bg-background text-xs"
+                                  rows={2}
+                                />
+                                {editingQueueImages.length > 0 && (
+                                  <div className="flex gap-2 overflow-x-auto pb-1">
+                                    {editingQueueImages.map((img) => (
+                                      <div key={img.id} className="relative group/img shrink-0">
+                                        <img
+                                          src={img.dataUrl}
+                                          alt=""
+                                          className="size-12 rounded-md border border-border/60 object-cover shadow-sm"
+                                        />
+                                        <button
+                                          type="button"
+                                          className="absolute -top-1.5 -right-1.5 flex size-4 items-center justify-center rounded-full bg-destructive text-destructive-foreground shadow-sm opacity-0 transition-opacity group-hover/img:opacity-100"
+                                          onClick={() => removeQueuedImage(img.id)}
+                                        >
+                                          <X className="size-2.5" />
+                                        </button>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                                <div className="flex items-center justify-between gap-2">
+                                  {editingQueueImages.length > 0 ? (
+                                    <p className="text-[10px] text-muted-foreground">
+                                      {t('input.queueImageCount', {
+                                        defaultValue: '{{count}} 张图片',
+                                        count: editingQueueImages.length
+                                      })}
+                                    </p>
+                                  ) : (
+                                    <span />
+                                  )}
+                                  {supportsVision && (
+                                    <Button
+                                      type="button"
+                                      variant="outline"
+                                      size="sm"
+                                      className="h-6 gap-1 px-2 text-[10px]"
+                                      onClick={() => queueFileInputRef.current?.click()}
+                                    >
+                                      <ImagePlus className="size-3" />
+                                      {t('input.attachImages')}
+                                    </Button>
+                                  )}
+                                </div>
+                              </div>
                             ) : (
-                              <span />
-                            )}
-                            {supportsVision && (
-                              <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                className="h-6 gap-1 px-2 text-[10px]"
-                                onClick={() => queueFileInputRef.current?.click()}
-                              >
-                                <ImagePlus className="size-3" />
-                                {t('input.attachImages')}
-                              </Button>
+                              <div className="flex items-start gap-2">
+                                <div className="min-w-0 flex-1">
+                                  <div className="truncate text-xs leading-5 text-foreground/90">
+                                    {summaryText ||
+                                      t('input.queueImageOnly', { defaultValue: '[仅图片]' })}
+                                  </div>
+                                  {msg.images.length > 0 && (
+                                    <div className="mt-1 flex items-center gap-1.5">
+                                      <span className="rounded-full border border-border/60 bg-muted/40 px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                                        {t('input.queueImageCount', {
+                                          defaultValue: '{{count}} 张图片',
+                                          count: msg.images.length
+                                        })}
+                                      </span>
+                                    </div>
+                                  )}
+                                </div>
+                                <div className="flex shrink-0 items-center gap-1">
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-7 w-7 rounded-md p-0 text-muted-foreground hover:text-foreground"
+                                    onClick={() => startEditQueuedMessage(msg)}
+                                    title={t('action.edit', { ns: 'common', defaultValue: '编辑' })}
+                                  >
+                                    <Pencil className="size-3.5" />
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-7 w-7 rounded-md p-0 text-muted-foreground hover:text-destructive"
+                                    onClick={() => removeQueuedMessage(msg.id)}
+                                    title={t('action.delete', { ns: 'common' })}
+                                  >
+                                    <Trash2 className="size-3.5" />
+                                  </Button>
+                                </div>
+                              </div>
                             )}
                           </div>
-                        </div>
-                      ) : (
-                        <div className="max-h-24 overflow-y-auto whitespace-pre-wrap break-words pr-1 text-xs leading-relaxed">
-                          {msg.text || t('input.queueImageOnly', { defaultValue: '[仅图片]' })}
-                        </div>
-                      )}
-                      {!isEditing && msg.images.length > 0 && (
-                        <p className="mt-1 text-[10px] text-muted-foreground">
-                          {t('input.queueImageCount', {
-                            defaultValue: '{{count}} 张图片',
-                            count: msg.images.length
-                          })}
-                        </p>
-                      )}
+                        )
+                      })}
                     </div>
-                  )
-                })}
+                  </div>
+                )}
               </div>
+
+              <AlertDialog open={queueClearConfirmOpen} onOpenChange={setQueueClearConfirmOpen}>
+                <AlertDialogContent size="sm">
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>
+                      {t('input.queueClearConfirmTitle', { defaultValue: '清空排队消息？' })}
+                    </AlertDialogTitle>
+                    <AlertDialogDescription>
+                      {t('input.queueClearConfirmDesc', {
+                        defaultValue: '这将删除当前会话中 {{count}} 条待发送消息。',
+                        count: queuedMessages.length
+                      })}
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel size="sm">
+                      {t('action.cancel', { ns: 'common' })}
+                    </AlertDialogCancel>
+                    <AlertDialogAction
+                      variant="destructive"
+                      size="sm"
+                      onClick={clearQueuedMessagesForActiveSession}
+                    >
+                      {t('action.clear', { ns: 'common' })}
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
             </div>
           )}
 
@@ -1461,7 +1633,15 @@ export function InputArea({
                   <AlertDialogContent size="sm">
                     <AlertDialogHeader>
                       <AlertDialogTitle>{t('input.clearConfirmTitle')}</AlertDialogTitle>
-                      <AlertDialogDescription>{t('input.clearConfirmDesc')}</AlertDialogDescription>
+                      <AlertDialogDescription>
+                        {queuedMessages.length > 0
+                          ? t('input.clearConfirmDescWithQueue', {
+                              defaultValue:
+                                '这将删除此对话中的所有消息，并清空当前会话的 {{count}} 条待发送消息。此操作不可撤销。',
+                              count: queuedMessages.length
+                            })
+                          : t('input.clearConfirmDesc')}
+                      </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>
                       <AlertDialogCancel size="sm">
@@ -1470,7 +1650,11 @@ export function InputArea({
                       <AlertDialogAction
                         variant="destructive"
                         size="sm"
-                        onClick={() => activeSessionId && clearSessionMessages(activeSessionId)}
+                        onClick={() => {
+                          if (!activeSessionId) return
+                          clearSessionMessages(activeSessionId)
+                          clearPendingSessionMessages(activeSessionId)
+                        }}
                       >
                         {t('action.clear', { ns: 'common' })}
                       </AlertDialogAction>

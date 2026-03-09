@@ -47,7 +47,7 @@ export const codexOAuthPreset: BuiltinProviderPreset = {
     body: {
       store: false
     },
-    omitBodyKeys: ['temperature', 'max_output_tokens', 'service_tier']
+    omitBodyKeys: ['temperature', 'max_output_tokens']
   },
   instructionsPrompt: 'codex-instructions',
   defaultModels: [
@@ -56,6 +56,7 @@ export const codexOAuthPreset: BuiltinProviderPreset = {
       name: 'GPT 5 Codex',
       icon: 'openai',
       enabled: true,
+      serviceTier: 'priority',
       contextLength: 400_000,
       maxOutputTokens: 64_384,
       supportsVision: true,
@@ -80,6 +81,7 @@ export const codexOAuthPreset: BuiltinProviderPreset = {
       name: 'GPT 5.1 Codex',
       icon: 'openai',
       enabled: true,
+      serviceTier: 'priority',
       contextLength: 400_000,
       maxOutputTokens: 64_384,
       supportsVision: true,
@@ -104,6 +106,7 @@ export const codexOAuthPreset: BuiltinProviderPreset = {
       name: 'GPT 5.1 Codex Max',
       icon: 'openai',
       enabled: true,
+      serviceTier: 'priority',
       contextLength: 400_000,
       maxOutputTokens: 64_384,
       supportsVision: true,
@@ -128,6 +131,7 @@ export const codexOAuthPreset: BuiltinProviderPreset = {
       name: 'GPT 5.1 Codex Mini',
       icon: 'openai',
       enabled: true,
+      serviceTier: 'priority',
       contextLength: 400_000,
       maxOutputTokens: 64_384,
       supportsVision: true,
@@ -152,6 +156,7 @@ export const codexOAuthPreset: BuiltinProviderPreset = {
       name: 'GPT 5.2 Codex',
       icon: 'openai',
       enabled: true,
+      serviceTier: 'priority',
       contextLength: 400_000,
       maxOutputTokens: 64_384,
       supportsVision: true,
@@ -176,6 +181,7 @@ export const codexOAuthPreset: BuiltinProviderPreset = {
       name: 'GPT 5.3 Codex',
       icon: 'openai',
       enabled: true,
+      serviceTier: 'priority',
       contextLength: 400_000,
       maxOutputTokens: 64_384,
       supportsVision: true,
@@ -200,6 +206,7 @@ export const codexOAuthPreset: BuiltinProviderPreset = {
       name: 'GPT 5.3 Codex Spark',
       icon: 'openai',
       enabled: true,
+      serviceTier: 'priority',
       contextLength: 128_000,
       maxOutputTokens: 64_384,
       supportsVision: true,
@@ -223,6 +230,7 @@ export const codexOAuthPreset: BuiltinProviderPreset = {
       name: "GPT 5.4",
       icon: 'openai',
       enabled: true,
+      serviceTier: 'priority',
       contextLength: 1_050_000,
       maxOutputTokens: 128_000,
       supportsVision: true,

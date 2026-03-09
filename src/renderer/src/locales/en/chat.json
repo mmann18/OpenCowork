@@ -48,7 +48,30 @@
     "sshDirectory": "Remote directory",
     "sshDirectoryPlaceholder": "",
     "sshSelect": "Select",
-    "sshConnected": "Connected"
+    "sshConnected": "Connected",
+    "queueTitle": "Queued messages",
+    "queuePausedHint": "Paused — click to resume",
+    "queueRunningHint": "Sent in order after the current task finishes",
+    "queueResume": "Resume",
+    "queueEditing": "Edit queued message",
+    "queueImageCount": "{{count}} images",
+    "queueImageOnly": "[Images only]",
+    "queueCleared": "Queued messages cleared",
+    "queueClearConfirmTitle": "Clear queued messages?",
+    "queueClearConfirmDesc": "This will remove {{count}} queued messages in the current session.",
+    "clearConfirmDescWithQueue": "This will remove all messages in this conversation and clear {{count}} queued messages in the current session. This action cannot be undone."
+  },
+  "askUser": {
+    "title": "Your input is needed",
+    "subtitle": "Answer these questions and I will continue.",
+    "waiting": "Waiting for answers",
+    "previous": "Previous",
+    "next": "Next",
+    "submit": "Submit",
+    "other": "Other",
+    "answerPlaceholder": "Type your answer…",
+    "answeredTitle": "Questions answered",
+    "answeredSubtitle": "Your selections and notes have been recorded"
   },
   "permission": {
     "title": "Permission Required",

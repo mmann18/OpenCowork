@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useMemo, useEffect } from 'react'
+import { useState, useRef, useCallback, useMemo, useEffect, useSyncExternalStore } from 'react'
 import { useTranslation } from 'react-i18next'
 import { formatTokens } from '@renderer/lib/format-tokens'
 import {
@@ -58,7 +58,12 @@ import { useChatStore, type SessionMode } from '@renderer/stores/chat-store'
 import { useUIStore } from '@renderer/stores/ui-store'
 import { useAgentStore } from '@renderer/stores/agent-store'
 import { useTeamStore } from '@renderer/stores/team-store'
-import { abortSession } from '@renderer/hooks/use-chat-actions'
+import {
+  abortSession,
+  clearPendingSessionMessages,
+  getPendingSessionMessageCountForSession,
+  subscribePendingSessionMessages
+} from '@renderer/hooks/use-chat-actions'
 import { sessionToMarkdown } from '@renderer/lib/utils/export-chat'
 import { cn } from '@renderer/lib/utils'
 
@@ -162,6 +167,7 @@ export function SessionListPanel(): React.JSX.Element {
     id: string
     title: string
     msgCount: number
+    queueCount: number
   } | null>(null)
   const [projectDeleteTarget, setProjectDeleteTarget] = useState<{
     id: string
@@ -186,6 +192,14 @@ export function SessionListPanel(): React.JSX.Element {
     () => new Set(runningSubAgentSessionIdsSig ? runningSubAgentSessionIdsSig.split('\u0000') : []),
     [runningSubAgentSessionIdsSig]
   )
+  const pendingQueueSignature = useSyncExternalStore(
+    subscribePendingSessionMessages,
+    () =>
+      sessions
+        .map((session) => `${session.id}:${getPendingSessionMessageCountForSession(session.id)}`)
+        .join('|'),
+    () => ''
+  )
 
   useEffect(() => {
     if (!renameDialog) return
@@ -193,6 +207,7 @@ export function SessionListPanel(): React.JSX.Element {
   }, [renameDialog])
 
   const deleteTargetRunningInfo = useMemo(() => {
+    void pendingQueueSignature
     if (!deleteTarget) return null
     const id = deleteTarget.id
     const isAgentRunning = runningSessions[id] === 'running'
@@ -200,7 +215,13 @@ export function SessionListPanel(): React.JSX.Element {
     const hasActiveTeam = activeTeamSessionId === id
     const hasRunning = isAgentRunning || hasActiveSubAgents || hasActiveTeam
     return { isAgentRunning, hasActiveSubAgents, hasActiveTeam, hasRunning }
-  }, [deleteTarget, runningSessions, runningSubAgentSessionIds, activeTeamSessionId])
+  }, [
+    deleteTarget,
+    runningSessions,
+    runningSubAgentSessionIds,
+    activeTeamSessionId,
+    pendingQueueSignature
+  ])
 
   const confirmDelete = useCallback(() => {
     if (!deleteTarget) return
@@ -212,6 +233,7 @@ export function SessionListPanel(): React.JSX.Element {
     if (runningSessions[session.id] === 'running') {
       abortSession(session.id)
     }
+    clearPendingSessionMessages(session.id)
     const snapshot = JSON.parse(JSON.stringify(session))
     deleteSession(session.id)
     setDeleteTarget(null)
@@ -293,6 +315,14 @@ export function SessionListPanel(): React.JSX.Element {
 
   const confirmDeleteProject = useCallback(async (): Promise<void> => {
     if (!projectDeleteTarget) return
+
+    const relatedSessionIds = useChatStore
+      .getState()
+      .sessions.filter((session) => session.projectId === projectDeleteTarget.id)
+      .map((session) => session.id)
+    for (const sessionId of relatedSessionIds) {
+      clearPendingSessionMessages(sessionId)
+    }
 
     await deleteProject(projectDeleteTarget.id)
     setCollapsedProjectIds((prev) => {
@@ -687,6 +717,11 @@ export function SessionListPanel(): React.JSX.Element {
                                     {runningSessions[session.id] === 'completed' && (
                                       <CheckCircle2 className="size-3.5 text-emerald-500" />
                                     )}
+                                    {getPendingSessionMessageCountForSession(session.id) > 0 && (
+                                      <span className="rounded-full border border-primary/20 bg-primary/10 px-1.5 py-0.5 text-[9px] font-medium text-primary">
+                                        {getPendingSessionMessageCountForSession(session.id)}
+                                      </span>
+                                    )}
                                     {session.pinned && (
                                       <Pin className="size-3 text-muted-foreground/30 -rotate-45" />
                                     )}
@@ -763,6 +798,7 @@ export function SessionListPanel(): React.JSX.Element {
                                   <ContextMenuItem
                                     onClick={() => {
                                       clearSessionMessages(session.id)
+                                      clearPendingSessionMessages(session.id)
                                       toast.success(t('sidebar_toast.messagesCleared'))
                                     }}
                                   >
@@ -819,16 +855,21 @@ export function SessionListPanel(): React.JSX.Element {
                                     runningSessions[session.id] === 'running' ||
                                     runningSubAgentSessionIds.has(session.id) ||
                                     activeTeamSessionId === session.id
-                                  if (session.messageCount > 0 || hasRunning) {
+                                  const queueCount = getPendingSessionMessageCountForSession(
+                                    session.id
+                                  )
+                                  if (session.messageCount > 0 || hasRunning || queueCount > 0) {
                                     setDeleteTarget({
                                       id: session.id,
                                       title: session.title,
-                                      msgCount: session.messageCount
+                                      msgCount: session.messageCount,
+                                      queueCount
                                     })
                                     return
                                   }
                                   const snapshot = getSessionSnapshot(session.id)
                                   if (!snapshot) return
+                                  clearPendingSessionMessages(snapshot.id)
                                   deleteSession(snapshot.id)
                                   toast.success(t('sidebar_toast.sessionDeleted'), {
                                     action: {
@@ -902,17 +943,19 @@ export function SessionListPanel(): React.JSX.Element {
                     title: deleteTarget?.title
                   })}
                 </p>
+                {deleteTarget?.queueCount ? (
+                  <p>
+                    {t('sidebar.deleteQueuedMessagesNotice', {
+                      defaultValue: '该会话还有 {{count}} 条待发送消息，也会一起删除。',
+                      count: deleteTarget.queueCount
+                    })}
+                  </p>
+                ) : null}
                 {deleteTargetRunningInfo?.hasRunning && (
-                  <p className="text-destructive font-medium">
-                    ⚠ This session has active tasks that will be stopped:
-                    {[
-                      deleteTargetRunningInfo.isAgentRunning && 'running agent',
-                      deleteTargetRunningInfo.hasActiveSubAgents && 'running sub-agents',
-                      deleteTargetRunningInfo.hasActiveTeam && 'active team'
-                    ]
-                      .filter(Boolean)
-                      .join(', ')}
-                    .
+                  <p className="font-medium text-destructive">
+                    {t('sidebar.deleteRunningNotice', {
+                      defaultValue: '该会话存在正在运行的任务，删除前会先停止当前运行。'
+                    })}
                   </p>
                 )}
               </div>

@@ -48,7 +48,30 @@
     "sshDirectory": "远程目录",
     "sshDirectoryPlaceholder": "",
     "sshSelect": "选择",
-    "sshConnected": "已连接"
+    "sshConnected": "已连接",
+    "queueTitle": "排队消息",
+    "queuePausedHint": "已暂停，点击继续发送",
+    "queueRunningHint": "当前任务结束后按顺序发送",
+    "queueResume": "继续发送",
+    "queueEditing": "编辑排队消息",
+    "queueImageCount": "{{count}} 张图片",
+    "queueImageOnly": "[仅图片]",
+    "queueCleared": "已清空排队消息",
+    "queueClearConfirmTitle": "清空排队消息？",
+    "queueClearConfirmDesc": "这将删除当前会话中 {{count}} 条待发送消息。",
+    "clearConfirmDescWithQueue": "这将删除此对话中的所有消息，并清空当前会话的 {{count}} 条待发送消息。此操作不可撤销。"
+  },
+  "askUser": {
+    "title": "需要你的回答",
+    "subtitle": "回答这些问题后，我再继续处理。",
+    "waiting": "等待回答",
+    "previous": "上一步",
+    "next": "下一步",
+    "submit": "提交",
+    "other": "其他",
+    "answerPlaceholder": "输入你的回答…",
+    "answeredTitle": "问题已回答",
+    "answeredSubtitle": "已记录你的选择与补充说明"
   },
   "permission": {
     "title": "需要权限",

@@ -109,6 +109,7 @@ class OpenAIChatProvider implements APIProvider {
       Authorization: `Bearer ${config.apiKey}`
     }
     if (config.userAgent) headers['User-Agent'] = config.userAgent
+    if (config.serviceTier) headers.service_tier = config.serviceTier
     applyHeaderOverrides(headers, config)
 
     const bodyStr = JSON.stringify(body)

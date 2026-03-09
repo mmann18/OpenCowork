@@ -21,6 +21,8 @@
     "deleteConversation": "删除会话",
     "deleteConfirm": "确定要删除「{{title}}」吗？",
     "deleteConfirmRunning": "该会话正在运行中，是否停止并删除？",
+    "deleteQueuedMessagesNotice": "该会话还有 {{count}} 条待发送消息，也会一起删除。",
+    "deleteRunningNotice": "该会话存在正在运行的任务，删除前会先停止当前运行。",
     "stopAndDelete": "停止并删除",
     "exportAsMarkdown": "导出为 Markdown",
     "exportAsJson": "导出为 JSON",
