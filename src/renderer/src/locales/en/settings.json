@@ -86,25 +86,36 @@
     }
   },
   "memory": {
-    "title": "Global Memory",
-    "subtitle": "Manage ~/.open-cowork/MEMORY.md for durable cross-session memory",
-    "pathLabel": "Memory file path",
+    "title": "Global Identity & Memory",
+    "subtitle": "Manage SOUL.md, USER.md, MEMORY.md, and daily memory files under ~/.open-cowork",
+    "rootPathLabel": "Global memory root",
     "pathUnavailable": "Path unavailable",
-    "resolvePathFailed": "Failed to resolve ~/.open-cowork/MEMORY.md",
+    "resolvePathFailed": "Failed to resolve ~/.open-cowork",
     "reloadAction": "Reload",
-    "effectiveHint": "Changes take effect on the next agent request because system prompts reload MEMORY.md each run.",
-    "editorLabel": "MEMORY.md content",
-    "editorPlaceholder": "Write durable memory here...",
+    "effectiveHint": "These files reload on the next agent request; main and shared sessions load different layers.",
+    "editorPlaceholder": "Edit {{file}} here...",
     "unsavedChanges": "Unsaved changes",
     "upToDate": "Up to date",
     "lastSavedAt": "Saved at {{time}}",
-    "missingFileHint": "MEMORY.md does not exist yet. A starter template is loaded; click Save to create the file.",
+    "missingFileHint": "{{file}} does not exist yet. A starter template is loaded; click Save to create it.",
     "saveAction": "Save",
     "savingAction": "Saving...",
     "resetAction": "Reset",
-    "saved": "Global memory saved",
-    "loadFailed": "Failed to load MEMORY.md: {{error}}",
-    "saveFailed": "Failed to save MEMORY.md: {{error}}"
+    "saved": "{{file}} saved",
+    "loadFailed": "Failed to load global identity/memory files: {{error}}",
+    "saveFailed": "Failed to save {{file}}: {{error}}",
+    "tabs": {
+      "soul": "SOUL.md",
+      "user": "USER.md",
+      "memory": "MEMORY.md",
+      "daily": "Today"
+    },
+    "tabDescriptions": {
+      "soul": "Defines global identity, style, and durable behavior boundaries.",
+      "user": "Captures your long-term preferences, collaboration style, and context.",
+      "memory": "Stores cross-project long-term memory and durable decisions.",
+      "daily": "Keeps short-term notes for today that can later be distilled into MEMORY.md."
+    }
   },
   "model": {
     "title": "Model Configuration",

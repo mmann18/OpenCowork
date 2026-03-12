@@ -57,10 +57,43 @@ import { SkillsMarketPanel } from './SkillsMarketPanel'
 import { ModelIcon, ProviderIcon } from './provider-icons'
 import { IPC } from '@renderer/lib/ipc/channels'
 import { ipcClient } from '@renderer/lib/ipc/ipc-client'
-import { readTextFile, resolveGlobalMemoryPath } from '@renderer/lib/agent/memory-files'
+import {
+  joinFsPath,
+  readTextFile,
+  resolveGlobalMemoryHomePath
+} from '@renderer/lib/agent/memory-files'
 import packageJson from '../../../../../package.json'
 
-const DEFAULT_GLOBAL_MEMORY_TEMPLATE = `# MEMORY.md
+const DEFAULT_GLOBAL_MEMORY_TEMPLATES = {
+  soul: `# SOUL.md
+
+This file defines your long-term identity, style, and behavior boundaries across OpenCowork sessions.
+
+## Core Truths
+- Be genuinely helpful, not performatively helpful
+- Be direct, grounded, and competent
+- Be resourceful before asking
+
+## Boundaries
+- Keep private things private
+- Ask before external or destructive actions
+- System and product safety rules outrank this file
+`,
+  user: `# USER.md
+
+This file captures durable user preferences and collaboration style.
+
+## Profile
+- Name:
+- What to call them:
+- Timezone:
+
+## Preferences
+- Preferred language:
+- Preferred answer style:
+- Things to avoid:
+`,
+  memory: `# MEMORY.md
 
 This file stores global durable memory shared across OpenCowork sessions.
 
@@ -76,7 +109,97 @@ This file stores global durable memory shared across OpenCowork sessions.
 ## Do Not Store
 - Secrets, API keys, credentials
 - Temporary debugging notes or one-off task context
+`,
+  daily: `# Daily Memory
+
+Use this file for short-term notes for today.
+
+- Decisions made today
+- Temporary context worth carrying into the next session
+- Follow-ups to review later and distill into MEMORY.md
 `
+} as const
+
+type GlobalMemoryTabId = keyof typeof DEFAULT_GLOBAL_MEMORY_TEMPLATES
+
+type GlobalMemoryFileState = {
+  id: GlobalMemoryTabId
+  titleKey: string
+  descriptionKey: string
+  filename: string
+  path: string
+  savedContent: string
+  draftContent: string
+  missingFile: boolean
+  lastSavedAt: number | null
+}
+
+const GLOBAL_MEMORY_FILE_META: Record<
+  GlobalMemoryTabId,
+  Pick<GlobalMemoryFileState, 'id' | 'titleKey' | 'descriptionKey'>
+> = {
+  soul: {
+    id: 'soul',
+    titleKey: 'memory.tabs.soul',
+    descriptionKey: 'memory.tabDescriptions.soul'
+  },
+  user: {
+    id: 'user',
+    titleKey: 'memory.tabs.user',
+    descriptionKey: 'memory.tabDescriptions.user'
+  },
+  memory: {
+    id: 'memory',
+    titleKey: 'memory.tabs.memory',
+    descriptionKey: 'memory.tabDescriptions.memory'
+  },
+  daily: {
+    id: 'daily',
+    titleKey: 'memory.tabs.daily',
+    descriptionKey: 'memory.tabDescriptions.daily'
+  }
+}
+
+function createInitialGlobalMemoryFiles(): Record<GlobalMemoryTabId, GlobalMemoryFileState> {
+  return {
+    soul: {
+      ...GLOBAL_MEMORY_FILE_META.soul,
+      filename: 'SOUL.md',
+      path: '',
+      savedContent: DEFAULT_GLOBAL_MEMORY_TEMPLATES.soul,
+      draftContent: DEFAULT_GLOBAL_MEMORY_TEMPLATES.soul,
+      missingFile: true,
+      lastSavedAt: null
+    },
+    user: {
+      ...GLOBAL_MEMORY_FILE_META.user,
+      filename: 'USER.md',
+      path: '',
+      savedContent: DEFAULT_GLOBAL_MEMORY_TEMPLATES.user,
+      draftContent: DEFAULT_GLOBAL_MEMORY_TEMPLATES.user,
+      missingFile: true,
+      lastSavedAt: null
+    },
+    memory: {
+      ...GLOBAL_MEMORY_FILE_META.memory,
+      filename: 'MEMORY.md',
+      path: '',
+      savedContent: DEFAULT_GLOBAL_MEMORY_TEMPLATES.memory,
+      draftContent: DEFAULT_GLOBAL_MEMORY_TEMPLATES.memory,
+      missingFile: true,
+      lastSavedAt: null
+    },
+    daily: {
+      ...GLOBAL_MEMORY_FILE_META.daily,
+      filename: '',
+      path: '',
+      savedContent: DEFAULT_GLOBAL_MEMORY_TEMPLATES.daily,
+      draftContent: DEFAULT_GLOBAL_MEMORY_TEMPLATES.daily,
+      missingFile: true,
+      lastSavedAt: null
+    }
+  }
+}
 
 function isMissingFileError(error: string): boolean {
   return error.includes('ENOENT')
@@ -941,58 +1064,118 @@ function GeneralPanel(): React.JSX.Element {
 
 function MemoryPanel(): React.JSX.Element {
   const { t } = useTranslation('settings')
-  const [memoryPath, setMemoryPath] = useState('')
-  const [savedContent, setSavedContent] = useState('')
-  const [draftContent, setDraftContent] = useState('')
+  const [memoryRootPath, setMemoryRootPath] = useState('')
+  const [activeTab, setActiveTab] = useState<GlobalMemoryTabId>('soul')
+  const [files, setFiles] = useState<Record<GlobalMemoryTabId, GlobalMemoryFileState>>(
+    createInitialGlobalMemoryFiles
+  )
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  const [missingFile, setMissingFile] = useState(false)
-  const [lastSavedAt, setLastSavedAt] = useState<number | null>(null)
 
-  const hasUnsavedChanges = draftContent !== savedContent
+  const activeFile = files[activeTab]
+  const hasUnsavedChanges = activeFile.draftContent !== activeFile.savedContent
 
-  const loadGlobalMemory = useCallback(async () => {
+  const loadGlobalMemoryFiles = async (): Promise<void> => {
     setLoading(true)
     try {
-      const path = await resolveGlobalMemoryPath(ipcClient)
-      if (!path) {
+      const rootPath = await resolveGlobalMemoryHomePath(ipcClient)
+      if (!rootPath) {
         toast.error(t('memory.resolvePathFailed'))
-        setMemoryPath('')
-        setSavedContent('')
-        setDraftContent('')
-        setMissingFile(true)
+        setMemoryRootPath('')
         return
       }
 
-      setMemoryPath(path)
-      const { content, error } = await readTextFile(ipcClient, path)
-      if (error) {
-        if (isMissingFileError(error)) {
-          setSavedContent(DEFAULT_GLOBAL_MEMORY_TEMPLATE)
-          setDraftContent(DEFAULT_GLOBAL_MEMORY_TEMPLATE)
-          setMissingFile(true)
-          return
+      const today = new Date().toISOString().slice(0, 10)
+      const descriptors = {
+        soul: { filename: 'SOUL.md', path: joinFsPath(rootPath, 'SOUL.md') },
+        user: { filename: 'USER.md', path: joinFsPath(rootPath, 'USER.md') },
+        memory: { filename: 'MEMORY.md', path: joinFsPath(rootPath, 'MEMORY.md') },
+        daily: {
+          filename: `memory/${today}.md`,
+          path: joinFsPath(rootPath, 'memory', `${today}.md`)
         }
+      } as const
 
-        toast.error(t('memory.loadFailed', { error }))
-        return
-      }
+      setMemoryRootPath(rootPath)
 
-      const normalized = content ?? ''
-      setSavedContent(normalized)
-      setDraftContent(normalized)
-      setMissingFile(false)
+      const nextEntries = await Promise.all(
+        (Object.keys(descriptors) as GlobalMemoryTabId[]).map(async (id) => {
+          const descriptor = descriptors[id]
+          const { content, error } = await readTextFile(ipcClient, descriptor.path)
+
+          if (error && !isMissingFileError(error)) {
+            throw new Error(`${descriptor.filename}: ${error}`)
+          }
+
+          const normalized =
+            error && isMissingFileError(error)
+              ? DEFAULT_GLOBAL_MEMORY_TEMPLATES[id]
+              : (content ?? '')
+
+          return [
+            id,
+            {
+              ...GLOBAL_MEMORY_FILE_META[id],
+              filename: descriptor.filename,
+              path: descriptor.path,
+              savedContent: normalized,
+              draftContent: normalized,
+              missingFile: Boolean(error && isMissingFileError(error)),
+              lastSavedAt: null
+            }
+          ] as const
+        })
+      )
+
+      setFiles((prev) => {
+        const updated = { ...prev }
+        for (const [id, entry] of nextEntries) {
+          updated[id] = {
+            ...entry,
+            lastSavedAt: prev[id].lastSavedAt
+          }
+        }
+        return updated
+      })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      toast.error(t('memory.loadFailed', { error: message }))
     } finally {
       setLoading(false)
     }
-  }, [t])
+  }
 
   useEffect(() => {
-    void loadGlobalMemory()
-  }, [loadGlobalMemory])
+    void loadGlobalMemoryFiles()
+    // Only auto-load once when the panel mounts.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const updateDraft = useCallback(
+    (value: string) => {
+      setFiles((prev) => ({
+        ...prev,
+        [activeTab]: {
+          ...prev[activeTab],
+          draftContent: value
+        }
+      }))
+    },
+    [activeTab]
+  )
+
+  const handleReset = useCallback(() => {
+    setFiles((prev) => ({
+      ...prev,
+      [activeTab]: {
+        ...prev[activeTab],
+        draftContent: prev[activeTab].savedContent
+      }
+    }))
+  }, [activeTab])
 
   const handleSave = useCallback(async () => {
-    if (!memoryPath) {
+    if (!activeFile.path) {
       toast.error(t('memory.resolvePathFailed'))
       return
     }
@@ -1000,26 +1183,32 @@ function MemoryPanel(): React.JSX.Element {
     setSaving(true)
     try {
       const result = await ipcClient.invoke(IPC.FS_WRITE_FILE, {
-        path: memoryPath,
-        content: draftContent
+        path: activeFile.path,
+        content: activeFile.draftContent
       })
       const error = getIpcError(result)
       if (error) {
-        toast.error(t('memory.saveFailed', { error }))
+        toast.error(t('memory.saveFailed', { file: activeFile.filename, error }))
         return
       }
 
-      setSavedContent(draftContent)
-      setMissingFile(false)
-      setLastSavedAt(Date.now())
-      toast.success(t('memory.saved'))
+      setFiles((prev) => ({
+        ...prev,
+        [activeTab]: {
+          ...prev[activeTab],
+          savedContent: prev[activeTab].draftContent,
+          missingFile: false,
+          lastSavedAt: Date.now()
+        }
+      }))
+      toast.success(t('memory.saved', { file: activeFile.filename }))
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
-      toast.error(t('memory.saveFailed', { error: message }))
+      toast.error(t('memory.saveFailed', { file: activeFile.filename, error: message }))
     } finally {
       setSaving(false)
     }
-  }, [draftContent, memoryPath, t])
+  }, [activeFile.draftContent, activeFile.filename, activeFile.path, activeTab, t])
 
   return (
     <div className="space-y-8">
@@ -1031,71 +1220,104 @@ function MemoryPanel(): React.JSX.Element {
       <section className="space-y-3 rounded-lg border border-border/60 bg-muted/20 p-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="space-y-1">
-            <p className="text-sm font-medium">{t('memory.pathLabel')}</p>
+            <p className="text-sm font-medium">{t('memory.rootPathLabel')}</p>
             <p className="break-all text-xs text-muted-foreground">
-              {memoryPath || t('memory.pathUnavailable')}
+              {memoryRootPath || t('memory.pathUnavailable')}
             </p>
           </div>
           <Button
             variant="outline"
             size="sm"
             className="h-8 text-xs"
-            onClick={() => void loadGlobalMemory()}
+            onClick={() => void loadGlobalMemoryFiles()}
             disabled={loading || saving}
           >
             <RefreshCw className={`mr-1.5 size-3.5 ${loading ? 'animate-spin' : ''}`} />
             {t('memory.reloadAction')}
           </Button>
         </div>
-        {missingFile && (
-          <p className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-600 dark:text-amber-400">
-            {t('memory.missingFileHint')}
-          </p>
-        )}
         <p className="text-xs text-muted-foreground">{t('memory.effectiveHint')}</p>
       </section>
 
-      <section className="space-y-3">
-        <div className="flex items-center justify-between gap-3">
-          <label className="text-sm font-medium">{t('memory.editorLabel')}</label>
-          <span className="text-[11px] text-muted-foreground">
-            {hasUnsavedChanges
-              ? t('memory.unsavedChanges')
-              : lastSavedAt
-                ? t('memory.lastSavedAt', { time: new Date(lastSavedAt).toLocaleString() })
-                : t('memory.upToDate')}
-          </span>
+      <section className="space-y-4">
+        <div className="flex flex-wrap gap-2">
+          {(Object.keys(files) as GlobalMemoryTabId[]).map((id) => {
+            const entry = files[id]
+            const isActive = activeTab === id
+            return (
+              <Button
+                key={id}
+                type="button"
+                size="sm"
+                variant={isActive ? 'default' : 'outline'}
+                className="h-8 text-xs"
+                onClick={() => setActiveTab(id)}
+              >
+                {t(entry.titleKey)}
+              </Button>
+            )
+          })}
         </div>
-        <Textarea
-          value={draftContent}
-          onChange={(e) => setDraftContent(e.target.value)}
-          placeholder={t('memory.editorPlaceholder')}
-          rows={20}
-          className="min-h-[420px] font-mono text-xs leading-5"
-        />
-        <div className="flex items-center gap-2">
-          <Button
-            size="sm"
-            className="h-8 text-xs"
-            onClick={() => void handleSave()}
-            disabled={saving || loading || !hasUnsavedChanges}
-          >
-            {saving ? (
-              <Loader2 className="mr-1.5 size-3.5 animate-spin" />
-            ) : (
-              <Save className="mr-1.5 size-3.5" />
-            )}
-            {saving ? t('memory.savingAction') : t('memory.saveAction')}
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-8 text-xs"
-            onClick={() => setDraftContent(savedContent)}
-            disabled={saving || loading || !hasUnsavedChanges}
-          >
-            {t('memory.resetAction')}
-          </Button>
+
+        <div className="rounded-lg border border-border/60 bg-background/60 p-4 space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="space-y-1">
+              <label className="text-sm font-medium">{t(activeFile.titleKey)}</label>
+              <p className="text-xs text-muted-foreground">{t(activeFile.descriptionKey)}</p>
+              <p className="break-all text-[11px] text-muted-foreground">
+                {activeFile.path || t('memory.pathUnavailable')}
+              </p>
+            </div>
+            <span className="text-[11px] text-muted-foreground">
+              {hasUnsavedChanges
+                ? t('memory.unsavedChanges')
+                : activeFile.lastSavedAt
+                  ? t('memory.lastSavedAt', {
+                      time: new Date(activeFile.lastSavedAt).toLocaleString()
+                    })
+                  : t('memory.upToDate')}
+            </span>
+          </div>
+
+          {activeFile.missingFile && (
+            <p className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-600 dark:text-amber-400">
+              {t('memory.missingFileHint', { file: activeFile.filename })}
+            </p>
+          )}
+
+          <Textarea
+            value={activeFile.draftContent}
+            onChange={(e) => updateDraft(e.target.value)}
+            placeholder={t('memory.editorPlaceholder', {
+              file: activeFile.filename || t(activeFile.titleKey)
+            })}
+            rows={20}
+            className="min-h-[420px] font-mono text-xs leading-5"
+          />
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              className="h-8 text-xs"
+              onClick={() => void handleSave()}
+              disabled={saving || loading || !hasUnsavedChanges}
+            >
+              {saving ? (
+                <Loader2 className="mr-1.5 size-3.5 animate-spin" />
+              ) : (
+                <Save className="mr-1.5 size-3.5" />
+              )}
+              {saving ? t('memory.savingAction') : t('memory.saveAction')}
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 text-xs"
+              onClick={handleReset}
+              disabled={saving || loading || !hasUnsavedChanges}
+            >
+              {t('memory.resetAction')}
+            </Button>
+          </div>
         </div>
       </section>
     </div>
@@ -1371,9 +1593,7 @@ function ModelPanel(): React.JSX.Element {
           <section className="space-y-3">
             <div>
               <label className="text-sm font-medium">{t('model.promptRecommendationTitle')}</label>
-              <p className="text-xs text-muted-foreground">
-                {t('model.promptRecommendationDesc')}
-              </p>
+              <p className="text-xs text-muted-foreground">{t('model.promptRecommendationDesc')}</p>
             </div>
             {chatProviderGroups.length > 0 ? (
               <div className="grid gap-3 md:grid-cols-2">
@@ -1388,7 +1608,12 @@ function ModelPanel(): React.JSX.Element {
                         <p className="text-sm font-medium">{t(labelKey)}</p>
                         <p className="text-xs text-muted-foreground">{t(descKey)}</p>
                       </div>
-                      <Select value={value} onValueChange={(nextValue) => updatePromptRecommendationModel(mode, nextValue)}>
+                      <Select
+                        value={value}
+                        onValueChange={(nextValue) =>
+                          updatePromptRecommendationModel(mode, nextValue)
+                        }
+                      >
                         <SelectTrigger className="w-full text-xs">
                           <SelectValue placeholder={t('model.selectRecommendationModel')} />
                         </SelectTrigger>

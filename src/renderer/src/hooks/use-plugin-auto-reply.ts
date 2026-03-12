@@ -29,11 +29,7 @@ import { ipcClient } from '@renderer/lib/ipc/ipc-client'
 import { IPC } from '@renderer/lib/ipc/channels'
 import { registerPluginTools, isPluginToolsRegistered } from '@renderer/lib/channel/plugin-tools'
 import { DEFAULT_PLUGIN_PERMISSIONS } from '@renderer/lib/channel/types'
-import {
-  joinFsPath,
-  loadOptionalMemoryFile,
-  loadGlobalMemorySnapshot
-} from '@renderer/lib/agent/memory-files'
+import { loadLayeredMemorySnapshot } from '@renderer/lib/agent/memory-files'
 import type { UnifiedMessage, ProviderConfig } from '@renderer/lib/api/types'
 import type { AgentLoopConfig } from '@renderer/lib/agent/types'
 import type { ToolContext } from '@renderer/lib/tools/tool-types'
@@ -448,22 +444,16 @@ async function _runPluginAgent(task: PluginAutoReplyTask): Promise<void> {
           `For @mentions, fetch member open_id via **FeishuListChatMembers** and call **FeishuAtMember** (plain '@' text will not mention).`,
           `Always prefer sending files over pasting long content in messages.`
         ].join('\n')
-      : '',
+      : ''
   ]
     .filter(Boolean)
     .join('\n')
   userPrompt = userPrompt ? `${userPrompt}\n${channelCtx}` : channelCtx
 
-  // Load AGENTS.md memory file from working directory
-  let agentsMemory: string | undefined
-  if (session.workingFolder) {
-    const projectMemoryPath = joinFsPath(session.workingFolder, 'AGENTS.md')
-    agentsMemory = await loadOptionalMemoryFile(ipcClient, projectMemoryPath)
-  }
-
-  const globalMemorySnapshot = await loadGlobalMemorySnapshot(ipcClient)
-  const globalMemory = globalMemorySnapshot.content
-  const globalMemoryPath = globalMemorySnapshot.path
+  const memorySnapshot = await loadLayeredMemorySnapshot(ipcClient, {
+    workingFolder: session.workingFolder,
+    scope: 'shared'
+  })
   const sshConnection = session.sshConnectionId
     ? useSshStore
         .getState()
@@ -481,9 +471,8 @@ async function _runPluginAgent(task: PluginAutoReplyTask): Promise<void> {
     userRules: userPrompt,
     toolDefs: allToolDefs,
     language: settings.language,
-    agentsMemory,
-    globalMemory,
-    globalMemoryPath,
+    memorySnapshot,
+    sessionScope: 'shared',
     environmentContext
   })
 

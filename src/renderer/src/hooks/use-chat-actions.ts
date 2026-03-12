@@ -65,9 +65,8 @@ import {
   isMcpToolsRegistered
 } from '@renderer/lib/mcp/mcp-tools'
 import {
-  joinFsPath,
-  loadOptionalMemoryFile,
-  loadGlobalMemorySnapshot
+  loadLayeredMemorySnapshot,
+  type SessionMemoryScope
 } from '@renderer/lib/agent/memory-files'
 import { IMAGE_GENERATE_TOOL_NAME } from '@renderer/lib/app-plugin/types'
 
@@ -1199,23 +1198,18 @@ export function useChatActions(): {
                   `- **FeishuSendFile**: Send a file (PDF, document, spreadsheet, etc.)`,
                   `Both require plugin_id="${session.pluginId}" and chat_id="${chatId}".`
                 ].join('\n')
-              : '',
+              : ''
           ]
             .filter(Boolean)
             .join('\n')
           userPrompt = userPrompt ? `${userPrompt}\n${channelCtx}` : channelCtx
         }
 
-        // Load AGENTS.md memory file from working directory
-        let agentsMemory: string | undefined
-        if (session?.workingFolder) {
-          const projectMemoryPath = joinFsPath(session.workingFolder, 'AGENTS.md')
-          agentsMemory = await loadOptionalMemoryFile(ipcClient, projectMemoryPath)
-        }
-
-        const globalMemorySnapshot = await loadGlobalMemorySnapshot(ipcClient)
-        const globalMemory = globalMemorySnapshot.content
-        const globalMemoryPath = globalMemorySnapshot.path
+        const sessionScope: SessionMemoryScope = session?.pluginId ? 'shared' : 'main'
+        const memorySnapshot = await loadLayeredMemorySnapshot(ipcClient, {
+          workingFolder: session?.workingFolder,
+          scope: sessionScope
+        })
         const sshConnection = session?.sshConnectionId
           ? useSshStore
               .getState()
@@ -1234,9 +1228,8 @@ export function useChatActions(): {
           toolDefs: finalEffectiveToolDefs,
           language: useSettingsStore.getState().language,
           planMode: isPlanMode,
-          agentsMemory,
-          globalMemory,
-          globalMemoryPath,
+          memorySnapshot,
+          sessionScope,
           environmentContext
         })
         const agentProviderConfig: ProviderConfig = {

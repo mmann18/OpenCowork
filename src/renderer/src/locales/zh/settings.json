@@ -86,25 +86,36 @@
     }
   },
   "memory": {
-    "title": "全局记忆",
-    "subtitle": "管理 ~/.open-cowork/MEMORY.md，用于跨会话持久记忆",
-    "pathLabel": "记忆文件路径",
+    "title": "全局人格与记忆",
+    "subtitle": "管理 ~/.open-cowork 下的 SOUL.md、USER.md、MEMORY.md 和每日记忆文件",
+    "rootPathLabel": "全局记忆根目录",
     "pathUnavailable": "路径不可用",
-    "resolvePathFailed": "无法解析 ~/.open-cowork/MEMORY.md",
+    "resolvePathFailed": "无法解析 ~/.open-cowork 目录",
     "reloadAction": "重新加载",
-    "effectiveHint": "系统提示词每次请求都会重新读取 MEMORY.md，因此改动会在下一次请求生效。",
-    "editorLabel": "MEMORY.md 内容",
-    "editorPlaceholder": "在这里编写长期有效的记忆...",
+    "effectiveHint": "这些文件会在下一次 agent 请求时重新读取；主会话与共享会话的加载范围不同。",
+    "editorPlaceholder": "在这里编辑 {{file}} ...",
     "unsavedChanges": "有未保存更改",
     "upToDate": "已是最新",
     "lastSavedAt": "保存于 {{time}}",
-    "missingFileHint": "MEMORY.md 尚不存在。已加载初始模板，点击保存即可创建文件。",
+    "missingFileHint": "{{file}} 尚不存在。已加载初始模板，点击保存即可创建文件。",
     "saveAction": "保存",
     "savingAction": "保存中...",
     "resetAction": "重置",
-    "saved": "全局记忆已保存",
-    "loadFailed": "加载 MEMORY.md 失败：{{error}}",
-    "saveFailed": "保存 MEMORY.md 失败：{{error}}"
+    "saved": "{{file}} 已保存",
+    "loadFailed": "加载全局人格/记忆文件失败：{{error}}",
+    "saveFailed": "保存 {{file}} 失败：{{error}}",
+    "tabs": {
+      "soul": "SOUL.md",
+      "user": "USER.md",
+      "memory": "MEMORY.md",
+      "daily": "今日记忆"
+    },
+    "tabDescriptions": {
+      "soul": "定义全局人格、风格和长期行为边界。",
+      "user": "记录你的长期偏好、协作方式和背景。",
+      "memory": "沉淀跨项目长期记忆与稳定决策。",
+      "daily": "记录今天的短期上下文，后续可整理进 MEMORY.md。"
+    }
   },
   "model": {
     "title": "模型配置",
